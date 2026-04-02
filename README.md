@@ -25,6 +25,7 @@ sudo python app.py
 <img width="2764" height="1386" alt="image" src="https://github.com/user-attachments/assets/5dc70be6-e04b-4b64-b1d4-20f625059405" />
 點選想要模擬的位置並點擊“執行傳送” 每次更改單點傳送都需要按停止按鈕才可再次按執行傳送
 
+
 2.多點路徑模擬
 <img width="2828" height="1316" alt="image" src="https://github.com/user-attachments/assets/2251599f-ad57-4cf0-9fa7-60fe115195dc" />
 點選兩個以上的路徑點後按下“開始走路”就可以進行模擬，可更改模擬速度
