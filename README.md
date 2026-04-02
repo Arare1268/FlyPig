@@ -16,7 +16,7 @@ pip install -r requirements.txt
 3.啟動程式：
 sudo python app.py
 
-4.Running on http://127.0.0.1:
+4.Running on http://127.0.0.3000:
 
 -----使用方法------
 
