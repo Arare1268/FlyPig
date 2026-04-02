@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>種花飛人</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
+        #top-bar, #controls-bar { background: #222; color: white; padding: 10px; display: flex; gap: 10px; align-items: center; z-index: 2000; }
+        #controls-bar { background: #333; border-top: 1px solid #444; }
+        #map { flex-grow: 1; z-index: 1; }
+        .status-light { width: 12px; height: 12px; border-radius: 50%; background: #ff4d4d; }
+        .on { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+        button { cursor: pointer; padding: 5px 12px; border: none; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div id="top-bar">
+    <div id="light" class="status-light"></div>
+    <button onclick="scan()">🔍 掃描</button>
+    <button onclick="connect()" style="background:#27ae60; color:white;">⚡ 連接手機</button>
+    <span id="msg">未連線</span>
+</div>
+
+<div id="controls-bar">
+    模式: 
+    <select id="mode" onchange="clearMap()">
+        <option value="teleport">單點傳送</option>
+        <option value="route">多點模擬</option>
+    </select>
+    
+    緯度: <input type="text" id="manual-lat" placeholder="25.033" style="width:80px">
+    經度: <input type="text" id="manual-lng" placeholder="121.56" style="width:80px">
+    
+    速度: <input type="number" id="speed" value="20" style="width:45px"> km/h
+    
+    <button onclick="execTeleport()" style="background:#3498db; color:white;">📍 執行傳送</button>
+    <button onclick="startMove()" style="background:#e67e22; color:white;">🚗 開始走路</button>
+    <button onclick="stopMove()" style="background:#c0392b; color:white;">🛑 停止</button>
+    <button onclick="clearMap()">🗑️ 清除</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map').setView([25.0336, 121.5644], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    var waypoints = []; // 存儲點擊的所有點
+    var clickMarkers = [];
+    var routeLine = null;
+    var teleportMarker = null;
+
+    // 1. 初始化紅點 (目前位置)
+    var redDot = L.marker([0, 0], {
+        icon: L.divIcon({
+            className: 'my-red-dot',
+            html: '<div style="background:red;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 5px red;"></div>',
+            iconSize: [12, 12], iconAnchor: [6, 6]
+        })
+    }).addTo(map);
+
+    // 2. 定時同步紅點位置 (每秒抓一次)
+    setInterval(() => {
+        fetch('/get_status').then(res => res.json()).then(data => {
+            if (data.lat !== 0) {
+                redDot.setLatLng([data.lat, data.lng]);
+                document.getElementById('msg').innerText = data.status === "moving" ? "🚗 移動中..." : "✅ 已就緒";
+            }
+        });
+    }, 1000);
+
+    // 3. 地圖點擊：記錄路徑點
+    map.on('click', function(e) {
+        var mode = document.getElementById('mode').value;
+        document.getElementById('manual-lat').value = e.latlng.lat.toFixed(6);
+        document.getElementById('manual-lng').value = e.latlng.lng.toFixed(6);
+        
+        if (mode === 'teleport') {
+            if (teleportMarker) map.removeLayer(teleportMarker);
+            teleportMarker = L.marker(e.latlng).addTo(map);
+        } else {
+            // ... 多點模式邏輯不變 ...
+            waypoints.push([e.latlng.lat, e.latlng.lng]);
+            var m = L.circleMarker(e.latlng, {radius: 5, color: 'blue'}).addTo(map);
+            clickMarkers.push(m);
+            if (waypoints.length > 1) {
+                if (routeLine) map.removeLayer(routeLine);
+                routeLine = L.polyline(waypoints, {color: 'cyan', weight: 4}).addTo(map);
+            }
+        }
+    });
+
+    function execTeleport() {
+        let lat, lng;
+        const manualLat = document.getElementById('manual-lat').value;
+        const manualLng = document.getElementById('manual-lng').value;
+
+        if (manualLat && manualLng) {
+            // 如果輸入框有值，優先使用輸入框
+            lat = parseFloat(manualLat);
+            lng = parseFloat(manualLng);
+            
+            // 同步在地圖上畫個圈
+            if (teleportMarker) map.removeLayer(teleportMarker);
+            teleportMarker = L.marker([lat, lng]).addTo(map);
+            map.panTo([lat, lng]);
+        } else if (teleportMarker) {
+            // 否則使用地圖點擊的點
+            var ll = teleportMarker.getLatLng();
+            lat = ll.lat;
+            lng = ll.lng;
+        } else {
+            alert("請點擊地圖或輸入座標");
+            return;
+        }
+
+        fetch('/set_location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({lat: lat, lng: lng})
+        }).then(() => {
+            document.getElementById('msg').innerText = "📍 定位鎖定中...";
+        });
+    }
+
+    function startMove() {
+        if (waypoints.length < 2) return;
+        fetch('/start_route', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                points: waypoints,
+                speed: document.getElementById('speed').value
+            })
+        });
+    }
+
+    function stopMove() { fetch('/stop_route', {method: 'POST'}); }
+
+    function clearMap() {
+        waypoints = [];
+        clickMarkers.forEach(m => map.removeLayer(m));
+        if (routeLine) map.removeLayer(routeLine);
+        if (teleportMarker) map.removeLayer(teleportMarker);
+        clickMarkers = [];
+    }
+
+    function scan() { fetch('/scan_devices').then(r => r.json()).then(() => alert("掃描完成")); }
+    function connect() {
+        fetch('/connect_device', {method: 'POST'}).then(r => r.json()).then(data => {
+            document.getElementById('light').classList.add('on');
+            alert(data.msg);
+        });
+    }
+</script>
+</body>
+</html>
