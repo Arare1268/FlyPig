@@ -18,7 +18,7 @@ sudo python app.py
 
 4.Running on http://127.0.0.3000:
 
-##使用方法
+## 使用方法
 
 1.單點傳送
 
@@ -30,7 +30,7 @@ sudo python app.py
 <img width="2828" height="1316" alt="image" src="https://github.com/user-attachments/assets/2251599f-ad57-4cf0-9fa7-60fe115195dc" />
 點選兩個以上的路徑點後按下“開始走路”就可以進行模擬，可更改模擬速度
 
-##免責聲明
+## 免責聲明
 1.僅限學術與研究用途
 本專案開發初衷僅供地理資訊系統（GIS）研究、開發者測試應用程式及技術探討使用。請勿將本工具用於任何非法用途或違反第三方服務條款之行為。
 
