@@ -6,12 +6,83 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
-        #top-bar, #controls-bar { background: #222; color: white; padding: 10px; display: flex; gap: 10px; align-items: center; z-index: 2000; }
+        #top-bar, #controls-bar { background: #222; color: white; padding: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; z-index: 2000; }
         #controls-bar { background: #333; border-top: 1px solid #444; }
         #map { flex-grow: 1; z-index: 1; }
         .status-light { width: 12px; height: 12px; border-radius: 50%; background: #ff4d4d; }
         .on { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
         button { cursor: pointer; padding: 5px 12px; border: none; border-radius: 3px; }
+
+        /* 標記用的 emoji icon */
+        .poi-icon {
+            font-size: 26px;
+            text-align: center;
+            line-height: 26px;
+            text-shadow: 0 0 3px white, 0 0 3px white, 0 0 3px white;
+            cursor: pointer;
+        }
+
+        /* Leaflet popup 內的按鈕排版 */
+        .poi-popup { min-width: 180px; }
+        .poi-popup .title { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
+        .poi-popup .meta { font-size: 11px; color: #666; margin-bottom: 8px; }
+        .poi-popup button { width: 100%; margin: 3px 0; padding: 6px; }
+        .poi-popup .row { display: flex; gap: 4px; }
+        .poi-popup .row button { flex: 1; }
+
+        /* 側邊抽屜 */
+        #drawer {
+            position: fixed; top: 0; right: -380px; width: 360px; height: 100%;
+            background: #1e1e1e; color: white; z-index: 3000;
+            transition: right 0.3s; overflow-y: auto; padding: 15px;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+        }
+        #drawer.open { right: 0; }
+        #drawer h3 { margin-top: 20px; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        #drawer h3:first-child { margin-top: 0; }
+        .drawer-close { float: right; cursor: pointer; font-size: 20px; }
+
+        /* 圖鑑格子 */
+        .deco-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .deco-cell {
+            background: #2a2a2a; border-radius: 4px; padding: 8px 4px;
+            text-align: center; cursor: pointer; font-size: 11px;
+            border: 2px solid transparent; user-select: none;
+        }
+        .deco-cell:hover { background: #333; }
+        .deco-cell .emoji { font-size: 22px; display: block; margin-bottom: 2px; }
+        .deco-cell.s1 { border-color: #555; }      /* 種子 🌿 */
+        .deco-cell.s2 { border-color: #d4a017; }   /* 蛋 🥚 */
+        .deco-cell.s3 { border-color: #2ecc71; background: #1e3a1e; } /* 完成 ✅ */
+
+        /* POI 列表 */
+        .poi-list-item {
+            background: #2a2a2a; padding: 8px; margin-bottom: 4px; border-radius: 4px;
+            display: flex; align-items: center; gap: 8px; font-size: 13px;
+        }
+        .poi-list-item .emoji { font-size: 20px; }
+        .poi-list-item .info { flex: 1; }
+        .poi-list-item button { padding: 3px 8px; font-size: 11px; }
+        .poi-list-item .del { background: #c0392b; color: white; }
+        .poi-list-item .go { background: #3498db; color: white; }
+
+        /* 地區收折 */
+        .area-header {
+            display: flex; align-items: center; gap: 6px;
+            cursor: pointer; user-select: none;
+            padding: 8px 0; margin-top: 12px;
+            border-bottom: 1px solid #444;
+        }
+        .area-header:hover { color: #3498db; }
+        .area-header .arrow {
+            display: inline-block; transition: transform 0.2s;
+            font-size: 12px; width: 16px; text-align: center;
+        }
+        .area-header .arrow.collapsed { transform: rotate(-90deg); }
+        .area-header .area-name { font-weight: bold; font-size: 15px; }
+        .area-header .area-count { color: #888; font-size: 12px; }
+        .area-body { overflow: hidden; transition: max-height 0.3s ease; }
+        .area-body.collapsed { max-height: 0 !important; }
     </style>
 </head>
 <body>
@@ -19,14 +90,30 @@
 <div id="top-bar">
     <div id="light" class="status-light"></div>
     <span id="msg">未連線</span>
+    <span style="margin-left:auto;">
+        <button onclick="toggleDrawer('poi')" style="background:#16a085;color:white;">📍 標記清單</button>
+        <button onclick="toggleDrawer('deco')" style="background:#8e44ad;color:white;">📖 圖鑑</button>
+    </span>
 </div>
 
 <div id="controls-bar">
     模式: 
-    <select id="mode" onchange="clearMap()">
+    <select id="mode" onchange="onModeChange()">
         <option value="teleport">單點傳送</option>
         <option value="route">多點模擬</option>
+        <option value="mark">標記模式</option>
     </select>
+
+    <span id="mark-type-wrap" style="display:none;">
+        類型:
+        <select id="mark-type">
+            <option value="mushroom">🍄 蘑菇</option>
+            <option value="flower">🌸 花</option>
+            <option value="bigflower">🌺 大花</option>
+            <option value="seed">🌱 種子</option>
+            <option value="parachute">🪂 降落傘</option>
+        </select>
+    </span>
     
     緯度: <input type="text" id="manual-lat" placeholder="25.033" style="width:80px">
     經度: <input type="text" id="manual-lng" placeholder="121.56" style="width:80px">
@@ -36,22 +123,29 @@
     <button onclick="execTeleport()" style="background:#3498db; color:white;">📍 執行傳送</button>
     <button onclick="startMove()" style="background:#e67e22; color:white;">🚗 開始走路</button>
     <button onclick="stopMove()" style="background:#c0392b; color:white;">🛑 停止</button>
-    <button onclick="clearMap()">🗑️ 清除</button>
+    <button onclick="clearRoute()">🗑️ 清除路徑</button>
 </div>
 
 <div id="map"></div>
 
+<!-- 側邊抽屜 -->
+<div id="drawer">
+    <span class="drawer-close" onclick="closeDrawer()">✕</span>
+    <div id="drawer-content"></div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+    // ============ 地圖初始化 ============
     var map = L.map('map').setView([25.0336, 121.5644], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    var waypoints = []; // 存儲點擊的所有點
+    var waypoints = [];
     var clickMarkers = [];
     var routeLine = null;
     var teleportMarker = null;
 
-    // 1. 初始化紅點 (目前位置)
+    // 紅點：目前位置
     var redDot = L.marker([0, 0], {
         icon: L.divIcon({
             className: 'my-red-dot',
@@ -60,7 +154,6 @@
         })
     }).addTo(map);
 
-    // 2. 定時同步紅點位置 (每秒抓一次)
     setInterval(() => {
         fetch('/get_status').then(res => res.json()).then(data => {
             if (data.lat !== 0) {
@@ -70,7 +163,189 @@
         });
     }, 1000);
 
-    // 3. 地圖點擊：記錄路徑點
+    // ============ POI 標記系統 ============
+    const POI_TYPES = {
+        mushroom:  { emoji: '🍄', name: '蘑菇' },
+        flower:    { emoji: '🌸', name: '花' },
+        bigflower: { emoji: '🌺', name: '大花' },
+        seed:      { emoji: '🌱', name: '種子' },
+        parachute: { emoji: '🪂', name: '降落傘' },
+    };
+
+    let pois = [];           // {id, type, lat, lng, created}
+    let poiLayers = {};      // id -> L.marker
+    let poiCircles = {};     // id -> L.circle (40m 範圍圈)
+    const POI_RADIUS = 40;   // 花苗範圍半徑（公尺）
+
+    function loadPois() {
+        try {
+            pois = JSON.parse(localStorage.getItem('flypig_pois') || '[]');
+        } catch(e) { pois = []; }
+        pois.forEach(renderPoi);
+        updateCircleVisibility();
+
+        // 為舊標記（沒有 area）補查地址
+        pois.filter(p => !p.area || p.area === '查詢中...').forEach((p, i) => {
+            // 每個查詢間隔 1 秒，避免觸發 Nominatim 限速
+            setTimeout(() => {
+                reverseGeocode(p.lat, p.lng).then(area => {
+                    p.area = area;
+                    savePois();
+                    if (drawerMode === 'poi') renderPoiList();
+                });
+            }, i * 1100);
+        });
+    }
+
+    function savePois() {
+        localStorage.setItem('flypig_pois', JSON.stringify(pois));
+    }
+
+    function makePoiIcon(type) {
+        return L.divIcon({
+            className: '',
+            html: `<div class="poi-icon">${POI_TYPES[type].emoji}</div>`,
+            iconSize: [30, 30], iconAnchor: [15, 15]
+        });
+    }
+
+    function renderPoi(poi) {
+        const marker = L.marker([poi.lat, poi.lng], { icon: makePoiIcon(poi.type) }).addTo(map);
+        marker.on('click', () => openPoiPopup(poi.id));
+        poiLayers[poi.id] = marker;
+
+        // 40 公尺範圍圈（模擬遊戲內花苗範圍）
+        const circle = L.circle([poi.lat, poi.lng], {
+            radius: POI_RADIUS,
+            color: 'rgba(100, 100, 100, 0.6)',
+            fillColor: 'rgba(100, 100, 100, 0.3)',
+            weight: 1.5,
+            interactive: false  // 不攔截點擊，讓點擊穿透到 marker
+        }).addTo(map);
+        poiCircles[poi.id] = circle;
+    }
+
+    function addPoi(lat, lng, type) {
+        const poi = {
+            id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+            type: type, lat: lat, lng: lng,
+            created: new Date().toISOString().slice(0,10),
+            area: '查詢中...'
+        };
+        pois.push(poi);
+        renderPoi(poi);
+        updateCircleVisibility();
+        savePois();
+
+        // 反向地理編碼：座標 → 地區名稱
+        reverseGeocode(lat, lng).then(area => {
+            poi.area = area;
+            savePois();
+            if (drawerMode === 'poi') renderPoiList();
+        });
+    }
+
+    async function reverseGeocode(lat, lng) {
+        try {
+            const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=12&accept-language=zh-TW`;
+            const res = await fetch(url, { headers: { 'User-Agent': 'FlyPig/1.0' } });
+            const data = await res.json();
+            const addr = data.address || {};
+            // 取「區」層級的地區名（日本/台灣/其他地區的欄位名不同，依序嘗試）
+            const district = addr.suburb || addr.city_district || addr.quarter || addr.neighbourhood || '';
+            const city = addr.city || addr.town || addr.county || addr.state || '';
+            if (district && city) return `${city}${district}`;
+            if (city) return city;
+            if (district) return district;
+            return data.display_name ? data.display_name.split(',').slice(0, 2).join('') : '未知地區';
+        } catch(e) {
+            return '未分類';
+        }
+    }
+
+    function deletePoi(id) {
+        if (poiLayers[id]) {
+            map.removeLayer(poiLayers[id]);
+            delete poiLayers[id];
+        }
+        if (poiCircles[id]) {
+            map.removeLayer(poiCircles[id]);
+            delete poiCircles[id];
+        }
+        pois = pois.filter(p => p.id !== id);
+        savePois();
+        if (document.getElementById('drawer').classList.contains('open')) {
+            renderDrawer();
+        }
+    }
+
+    function changePoiType(id, newType) {
+        const poi = pois.find(p => p.id === id);
+        if (!poi) return;
+        poi.type = newType;
+        if (poiLayers[id]) {
+            poiLayers[id].setIcon(makePoiIcon(newType));
+        }
+        savePois();
+    }
+
+    function openPoiPopup(id) {
+        const poi = pois.find(p => p.id === id);
+        if (!poi) return;
+        const t = POI_TYPES[poi.type];
+
+        const typeOptions = Object.keys(POI_TYPES).map(k => 
+            `<option value="${k}" ${k===poi.type?'selected':''}>${POI_TYPES[k].emoji} ${POI_TYPES[k].name}</option>`
+        ).join('');
+
+        const html = `
+            <div class="poi-popup">
+                <div class="title">${t.emoji} ${t.name}</div>
+                <div class="meta">📌 ${poi.area || '未分類'}<br>標記於 ${poi.created} · ${poi.lat.toFixed(5)}, ${poi.lng.toFixed(5)}</div>
+                <button onclick="teleportToPoi('${id}')" style="background:#3498db;color:white;">📍 傳送到這裡</button>
+                <select onchange="changePoiType('${id}', this.value); map.closePopup();" style="width:100%;padding:5px;">
+                    ${typeOptions}
+                </select>
+                <button onclick="if(confirm('刪除這個標記？')) { deletePoi('${id}'); map.closePopup(); }" style="background:#c0392b;color:white;">🗑️ 刪除</button>
+            </div>
+        `;
+        L.popup().setLatLng([poi.lat, poi.lng]).setContent(html).openOn(map);
+    }
+
+    function teleportToPoi(id) {
+        const poi = pois.find(p => p.id === id);
+        if (!poi) return;
+        map.closePopup();
+        fetch('/set_location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({lat: poi.lat, lng: poi.lng})
+        }).then(() => {
+            document.getElementById('msg').innerText = `📍 傳送到 ${POI_TYPES[poi.type].name}`;
+        });
+    }
+
+    // ============ 地圖點擊：依模式做不同事 ============
+    function onModeChange() {
+        const mode = document.getElementById('mode').value;
+        document.getElementById('mark-type-wrap').style.display = (mode === 'mark') ? 'inline' : 'none';
+        clearRoute();
+        updateCircleVisibility();
+    }
+
+    // 只在「標記模式」和「多點模擬」下顯示範圍圈
+    function updateCircleVisibility() {
+        const mode = document.getElementById('mode').value;
+        const show = (mode === 'mark' || mode === 'route');
+        Object.values(poiCircles).forEach(circle => {
+            if (show) {
+                if (!map.hasLayer(circle)) map.addLayer(circle);
+            } else {
+                if (map.hasLayer(circle)) map.removeLayer(circle);
+            }
+        });
+    }
+
     map.on('click', function(e) {
         var mode = document.getElementById('mode').value;
         document.getElementById('manual-lat').value = e.latlng.lat.toFixed(6);
@@ -79,8 +354,7 @@
         if (mode === 'teleport') {
             if (teleportMarker) map.removeLayer(teleportMarker);
             teleportMarker = L.marker(e.latlng).addTo(map);
-        } else {
-            // ... 多點模式邏輯不變 ...
+        } else if (mode === 'route') {
             waypoints.push([e.latlng.lat, e.latlng.lng]);
             var m = L.circleMarker(e.latlng, {radius: 5, color: 'blue'}).addTo(map);
             clickMarkers.push(m);
@@ -88,25 +362,25 @@
                 if (routeLine) map.removeLayer(routeLine);
                 routeLine = L.polyline(waypoints, {color: 'cyan', weight: 4}).addTo(map);
             }
+        } else if (mode === 'mark') {
+            const type = document.getElementById('mark-type').value;
+            addPoi(e.latlng.lat, e.latlng.lng, type);
         }
     });
 
+    // ============ 原本的傳送/路徑控制 ============
     function execTeleport() {
         let lat, lng;
         const manualLat = document.getElementById('manual-lat').value;
         const manualLng = document.getElementById('manual-lng').value;
 
         if (manualLat && manualLng) {
-            // 如果輸入框有值，優先使用輸入框
             lat = parseFloat(manualLat);
             lng = parseFloat(manualLng);
-            
-            // 同步在地圖上畫個圈
             if (teleportMarker) map.removeLayer(teleportMarker);
             teleportMarker = L.marker([lat, lng]).addTo(map);
             map.panTo([lat, lng]);
         } else if (teleportMarker) {
-            // 否則使用地圖點擊的點
             var ll = teleportMarker.getLatLng();
             lat = ll.lat;
             lng = ll.lng;
@@ -138,21 +412,243 @@
 
     function stopMove() { fetch('/stop_route', {method: 'POST'}); }
 
-    function clearMap() {
+    function clearRoute() {
         waypoints = [];
         clickMarkers.forEach(m => map.removeLayer(m));
         if (routeLine) map.removeLayer(routeLine);
         if (teleportMarker) map.removeLayer(teleportMarker);
         clickMarkers = [];
+        routeLine = null;
+        teleportMarker = null;
     }
 
-    function scan() { fetch('/scan_devices').then(r => r.json()).then(() => alert("掃描完成")); }
-    function connect() {
-        fetch('/connect_device', {method: 'POST'}).then(r => r.json()).then(data => {
-            document.getElementById('light').classList.add('on');
-            alert(data.msg);
-        });
+    // ============ 側邊抽屜 ============
+    let drawerMode = null;
+
+    function toggleDrawer(mode) {
+        const drawer = document.getElementById('drawer');
+        if (drawerMode === mode && drawer.classList.contains('open')) {
+            closeDrawer();
+        } else {
+            drawerMode = mode;
+            drawer.classList.add('open');
+            renderDrawer();
+        }
     }
+
+    function closeDrawer() {
+        document.getElementById('drawer').classList.remove('open');
+        drawerMode = null;
+    }
+
+    function renderDrawer() {
+        if (drawerMode === 'poi') renderPoiList();
+        else if (drawerMode === 'deco') renderDecoChecklist();
+    }
+
+    // 記住哪些地區被收折了
+    let collapsedAreas = {};
+
+    function toggleArea(area) {
+        collapsedAreas[area] = !collapsedAreas[area];
+        const body = document.getElementById('area-body-' + CSS.escape(area));
+        const arrow = document.getElementById('area-arrow-' + CSS.escape(area));
+        if (body) body.classList.toggle('collapsed');
+        if (arrow) arrow.classList.toggle('collapsed');
+    }
+
+    function renderPoiList() {
+        const counts = {};
+        Object.keys(POI_TYPES).forEach(k => counts[k] = 0);
+        pois.forEach(p => counts[p.type] = (counts[p.type]||0) + 1);
+
+        let html = '<h3>📍 地圖標記</h3>';
+        html += '<div style="font-size:12px;color:#aaa;margin-bottom:10px;">';
+        html += Object.keys(POI_TYPES).map(k => `${POI_TYPES[k].emoji} ${counts[k]}`).join(' &nbsp; ');
+        html += `<br>共 ${pois.length} 個標記</div>`;
+
+        html += `<div style="margin-bottom:10px;">
+            <button onclick="exportPois()" style="background:#27ae60;color:white;">⬇ 匯出 JSON</button>
+            <button onclick="importPois()" style="background:#2980b9;color:white;">⬆ 匯入 JSON</button>
+            <button onclick="if(confirm('清空所有標記？')){pois.forEach(p=>{if(poiLayers[p.id])map.removeLayer(poiLayers[p.id]);if(poiCircles[p.id])map.removeLayer(poiCircles[p.id])});pois=[];poiLayers={};poiCircles={};savePois();renderDrawer();}" style="background:#c0392b;color:white;">清空全部</button>
+        </div>`;
+
+        if (pois.length === 0) {
+            html += '<p style="color:#888;">還沒有標記。切換到「標記模式」後點擊地圖即可新增。</p>';
+        } else {
+            // 依地區分組
+            const byArea = {};
+            pois.forEach(p => {
+                const area = p.area || '未分類';
+                if (!byArea[area]) byArea[area] = [];
+                byArea[area].push(p);
+            });
+
+            const areaKeys = Object.keys(byArea).sort((a, b) => {
+                if (a === '未分類' || a === '查詢中...') return 1;
+                if (b === '未分類' || b === '查詢中...') return -1;
+                return a.localeCompare(b, 'zh-TW');
+            });
+
+            areaKeys.forEach(area => {
+                const list = byArea[area];
+                const isCollapsed = !!collapsedAreas[area];
+                const summary = list.map(p => POI_TYPES[p.type].emoji).join(' ');
+                const safeArea = CSS.escape(area);
+
+                // 收折 header
+                html += `<div class="area-header" onclick="toggleArea('${area.replace(/'/g, "\\'")}')">
+                    <span class="arrow ${isCollapsed ? 'collapsed' : ''}" id="area-arrow-${safeArea}">▼</span>
+                    <span class="area-name">📌 ${area}</span>
+                    <span class="area-count">(${list.length})</span>
+                </div>`;
+
+                // 收折 body
+                html += `<div class="area-body ${isCollapsed ? 'collapsed' : ''}" id="area-body-${safeArea}" style="max-height:${isCollapsed ? '0' : list.length * 60 + 30 + 'px'};">`;
+                html += `<div style="font-size:12px;color:#aaa;padding:4px 0;">${summary}</div>`;
+
+                list.forEach(p => {
+                    const t = POI_TYPES[p.type];
+                    html += `<div class="poi-list-item">
+                        <span class="emoji">${t.emoji}</span>
+                        <div class="info">
+                            ${t.name}<br>
+                            <span style="color:#888;font-size:11px;">${p.created} · ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</span>
+                        </div>
+                        <button class="go" onclick="map.setView([${p.lat},${p.lng}],17);teleportToPoi('${p.id}')">飛去</button>
+                        <button class="del" onclick="if(confirm('刪除？'))deletePoi('${p.id}')">✕</button>
+                    </div>`;
+                });
+                html += `</div>`;
+            });
+        }
+
+        document.getElementById('drawer-content').innerHTML = html;
+    }
+
+    function exportPois() {
+        const data = JSON.stringify(pois, null, 2);
+        const blob = new Blob([data], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'flypig_pois_' + new Date().toISOString().slice(0,10) + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importPois() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = e => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = ev => {
+                try {
+                    const imported = JSON.parse(ev.target.result);
+                    if (!Array.isArray(imported)) throw new Error('格式錯誤');
+                    let added = 0;
+                    imported.forEach(p => {
+                        if (p.lat && p.lng && p.type && POI_TYPES[p.type]) {
+                            if (!p.id) p.id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+                            if (!pois.find(x => x.id === p.id)) {
+                                if (!p.area) p.area = '查詢中...';
+                                pois.push(p);
+                                renderPoi(p);
+                                added++;
+                                // 如果沒有地區名，補查
+                                if (p.area === '查詢中...') {
+                                    reverseGeocode(p.lat, p.lng).then(area => {
+                                        p.area = area;
+                                        savePois();
+                                        if (drawerMode === 'poi') renderPoiList();
+                                    });
+                                }
+                            }
+                        }
+                    });
+                    savePois();
+                    renderDrawer();
+                    alert(`匯入 ${added} 個標記`);
+                } catch(err) {
+                    alert('匯入失敗：' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    // ============ Decor 圖鑑（簡化版） ============
+    // 顏色 + 類型的組合，狀態：0=無 / 1=種子 / 2=蛋 / 3=完成
+    const DECO_COLORS = ['紅', '黃', '藍', '紫', '白', '岩', '羽', '冰'];
+    const DECO_TYPES = [
+        {key:'roadside', emoji:'🛣️', name:'路邊'},
+        {key:'garden',   emoji:'🌳', name:'公園'},
+        {key:'forest',   emoji:'🌲', name:'森林'},
+        {key:'water',    emoji:'💧', name:'水邊'},
+        {key:'cafe',     emoji:'☕', name:'咖啡'},
+        {key:'sweets',   emoji:'🍰', name:'甜點'},
+        {key:'restaurant',emoji:'🍴',name:'餐廳'},
+        {key:'mart',     emoji:'🛒', name:'超市'},
+        {key:'culture',  emoji:'🏛️', name:'文化'},
+        {key:'station',  emoji:'🚉', name:'車站'},
+        {key:'beach',    emoji:'🏖️', name:'海邊'},
+        {key:'mountain', emoji:'⛰️', name:'山'},
+        {key:'office',   emoji:'🏢', name:'辦公'},
+    ];
+
+    let decoState = {};
+
+    function loadDeco() {
+        try { decoState = JSON.parse(localStorage.getItem('flypig_deco') || '{}'); }
+        catch(e) { decoState = {}; }
+    }
+
+    function saveDeco() {
+        localStorage.setItem('flypig_deco', JSON.stringify(decoState));
+    }
+
+    function cycleDeco(key) {
+        decoState[key] = ((decoState[key] || 0) + 1) % 4;
+        saveDeco();
+        renderDecoChecklist();
+    }
+
+    function renderDecoChecklist() {
+        const total = DECO_COLORS.length * DECO_TYPES.length;
+        const done = Object.values(decoState).filter(v => v === 3).length;
+        const inProg = Object.values(decoState).filter(v => v > 0 && v < 3).length;
+
+        let html = `<h3>📖 Decor 圖鑑</h3>
+            <div style="font-size:12px;color:#aaa;margin-bottom:8px;">
+                ✅ ${done} / ${total} 完成 &nbsp; 🥚 ${inProg} 進行中<br>
+                點擊切換: ❌ → 🌿 → 🥚 → ✅
+            </div>
+            <div style="margin-bottom:10px;">
+                <button onclick="if(confirm('清空圖鑑進度？')){decoState={};saveDeco();renderDrawer();}" style="background:#c0392b;color:white;">清空</button>
+            </div>`;
+
+        DECO_TYPES.forEach(t => {
+            html += `<h3>${t.emoji} ${t.name}</h3><div class="deco-grid">`;
+            DECO_COLORS.forEach(c => {
+                const key = `${t.key}_${c}`;
+                const state = decoState[key] || 0;
+                const stateEmoji = ['❌','🌿','🥚','✅'][state];
+                html += `<div class="deco-cell s${state}" onclick="cycleDeco('${key}')">
+                    <span class="emoji">${stateEmoji}</span>${c}
+                </div>`;
+            });
+            html += `</div>`;
+        });
+
+        document.getElementById('drawer-content').innerHTML = html;
+    }
+
+    // ============ 啟動 ============
+    loadPois();
+    loadDeco();
 </script>
 </body>
 </html>
